@@ -1,0 +1,14 @@
+.venv/
+data_cache/
+__pycache__/
+*.pyc
+.pytest_cache/
+plan*.md
+!/PLAN.md
+plan*.csv
+.streamlit/secrets.toml
+# personal data and local tooling
+owned_from_cat_guide.txt
+.claude/
+.vscode/
+.idea/
