@@ -361,6 +361,10 @@ if plan_clicked:
     if not seed:
         st.error("The tracks URL has no seed. Copy it from bc.godfat.org after your last roll.")
         st.stop()
+    if not loaded.banners:
+        st.error("No banners are loaded, so there is nothing to plan. Press Fetch banners; the Checks tab lists "
+                 "any page that failed to load.")
+        st.stop()
     mode = DEPTH[ss.depth]
     inputs = Inputs(seed=seed, last=last, today=ss.plan_date, owned=frozenset(ss.owned_ids), tickets=int(ss.tickets),
                     cat_food=int(ss.cat_food), plats=int(ss.plats), legends=int(ss.legends),
@@ -825,6 +829,8 @@ with tab_tracks:
     tr_seed, tr_last, tr_event = parse_tracks_url(ss.tracks_url) if ss.tracks_url.strip() else (0, 0, None)
     if not tr_seed:
         st.info("Paste your tracks URL in the sidebar first.")
+    elif not loaded.banners:
+        st.info("No banners are loaded. Press Fetch banners; the Checks tab lists any page that failed.")
     else:
         ev_ids = list(loaded.banners)
         default_ev = tr_event if tr_event in loaded.banners else ev_ids[0]

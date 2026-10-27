@@ -51,3 +51,15 @@ def test_mixed_seasonal_banner_is_named_after_every_set_it_holds():
     assert display_name(title, "blurb") == title
     pure = FakeClient({1: "Xmas Gals", 2: "Xmas Gals", 3: "Xmas Gals", 4: "Xmas Gals", 5: "Halloween Capsules"})
     assert pure.banner_title(b, {})[0] == "Xmas Gals"
+
+
+def test_details_pages_since_october_2026_parse():
+    """bc.godfat.org renamed the block heading "Gacha information:" to "Event details:" in October 2026."""
+    from pathlib import Path
+    from bcplanner.scrape import parse_details
+    page = (Path(__file__).parent / "fixtures" / "details_2026-10-20_1004.html").read_text(encoding="utf-8")
+    assert "Gacha information" not in page and "Event details:" in page
+    banner, names = parse_details(page, "2026-10-20_1004")
+    assert banner.rates == (6970, 2500, 500, 30)
+    assert [len(banner.pools[r]) for r in ("rare", "supa", "uber", "legend")] == [25, 29, 9, 1]
+    assert "Lumina" in names.values() and "Komori" in names.values()

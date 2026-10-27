@@ -79,10 +79,18 @@ def parse_events(page: str) -> list[EventInfo]:
 
 
 def parse_details(page: str, event_id: str) -> tuple[Banner, dict[int, str]]:
-    """The Gacha information block of a Details page -> Banner plus id->name for its cats."""
-    start = page.find("Gacha information")
+    """The rate block of a Details page -> Banner plus id->name for its cats.
+
+    The block is headed "Gacha information:" on older pages and "Event details:" since October 2026;
+    both sit in <div class="information">, and the list inside is the same."""
+    start = -1
+    for head in ("Gacha information:", "Event details:", '<div class="information">'):
+        start = page.find(head)
+        if start >= 0:
+            break
     if start < 0:
-        raise ParseError("Gacha information block not found (is details=true set, and does the event exist?)")
+        raise ParseError("rate block not found (no 'Event details' or 'Gacha information' on the page): "
+                         "bc.godfat.org may have changed its layout, or details=true is missing")
     block = page[start:start + 80000]
     rates = {r: 0 for r in DETAILS_RARITY.values()}
     pools: dict[str, list[int]] = {r: [] for r in DETAILS_RARITY.values()}
