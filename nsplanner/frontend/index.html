@@ -1,0 +1,71 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent; }
+  body { font-family: "Source Sans Pro", system-ui, sans-serif; }
+  #root { padding: 2px 2px 8px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+// A minimal Streamlit component (protocol v1, no build step): shows the pull list it is given and
+// reports the pull you click as {k, t}. k is the pull's index in the plan; t makes repeat clicks count.
+(function () {
+  const root = document.getElementById("root");
+  let current = null;
+  let selected = null;
+
+  function send(type, extra) {
+    window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type: type }, extra || {}), "*");
+  }
+  function height() {
+    // the content's own height: the document's scrollHeight would include the frame itself and keep growing
+    send("streamlit:setFrameHeight", { height: Math.ceil(root.getBoundingClientRect().bottom) + 6 });
+  }
+  function mark() {
+    root.querySelectorAll(".it[data-k]").forEach(function (el) {
+      const k = Number(el.dataset.k);
+      el.classList.toggle("after", selected !== null && k > selected);
+      el.classList.toggle("stop", selected !== null && k === selected);
+    });
+    root.querySelectorAll(".row").forEach(function (row) {
+      const first = Number(row.dataset.first);
+      row.classList.toggle("after-row", selected !== null && first > selected);
+    });
+  }
+  function bind() {
+    root.querySelectorAll("[data-stop]").forEach(function (el) {
+      el.addEventListener("click", function (ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        selected = Number(el.dataset.stop);     // a 10x pull can only be stopped after its last roll
+        mark();
+        send("streamlit:setComponentValue", { value: { k: selected, t: Date.now() }, dataType: "json" });
+      });
+    });
+  }
+  window.addEventListener("message", function (event) {
+    const d = event.data;
+    if (!d || d.type !== "streamlit:render") return;
+    const args = d.args || {};
+    const theme = d.theme || {};
+    if (theme.textColor) document.body.style.color = theme.textColor;
+    if (theme.font) document.body.style.fontFamily = theme.font;
+    if (args.html !== current) {
+      current = args.html;
+      root.innerHTML = args.html || "";
+      selected = (args.selected === null || args.selected === undefined) ? null : Number(args.selected);
+      bind();
+    }
+    mark();
+    height();
+  });
+  new ResizeObserver(height).observe(root);
+  send("streamlit:componentReady", { apiVersion: 1 });
+})();
+</script>
+</body>
+</html>

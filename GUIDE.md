@@ -1,4 +1,4 @@
-# Battle Cats Pull Planner: guide
+# Wayfinder: guide
 
 Exact, seed-based planner for spending rare tickets, cat food, platinum tickets and
 legend tickets on the banners open today and tomorrow. The game's gacha is a plain

@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Battle Cats Pull Planner - local launcher.
+rem Wayfinder - local launcher.
 rem Double-click this file (or run:  run.bat [port]). First run creates .venv and installs the requirements.
 cd /d "%~dp0"
 set PORT=%1

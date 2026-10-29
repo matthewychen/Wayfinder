@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .actions import CLOCK, ELEVEN, LEGEND, PLAT, SINGLE
+from .model import BASE, RARITIES, Banner
 from .problem import Problem
 from .replay import ReplayResult
 from .sim import single
@@ -33,6 +34,10 @@ class Metrics:
     fest_slots_skipped: int = 0       # Uberfest-only uber slots on the other track the path went past
     legend_slots_skipped: int = 0     # legend slots on the other track the path went past
     pass_penalty: float = 0.0         # opportunity cost charged for them (already inside `value`)
+    new_value: float = 0.0            # value of the new units alone (no repeats, penalties or ticket costs)
+    straight_value: float = 0.0       # the same spend pulled straight on one banner: new-unit value on average
+    straight_banner: str = ""         # the banner open today that does best pulled straight
+    improvement: float = 0.0          # new_value / straight_value (0 when there is nothing to compare)
 
 
 def compute(problem: Problem, rep: ReplayResult) -> Metrics:
@@ -47,6 +52,11 @@ def compute(problem: Problem, rep: ReplayResult) -> Metrics:
     m.cat_food = rep.cf_units * 750
     m.cost_draw_equivalents = rep.tickets / P.tickets_per_draw + rep.cf_units / 2
     m.value_per_draw_equivalent = rep.value / m.cost_draw_equivalents if m.cost_draw_equivalents > 0 else 0.0
+    m.new_value = sum(P.value_of(cid) for cid in rep.gained)
+    elevens = sum(1 for s in rep.steps if s.action[0] == ELEVEN)
+    m.straight_value, m.straight_banner = straight_value(P, rep.tickets, elevens, rep.plats, rep.legends)
+    if m.straight_value > 1e-9:
+        m.improvement = m.new_value / m.straight_value
 
     gained_so_far: set[int] = set()
     last_banner = None
@@ -90,6 +100,55 @@ def compute(problem: Problem, rep: ReplayResult) -> Metrics:
         elif kind == LEGEND:
             legends_left -= 1
     return m
+
+
+def roll_chances(b: Banner) -> dict[int, float]:
+    """cat id -> chance that one roll on banner b gives it (the banner's rates, every slot of a pool equally likely)."""
+    out: dict[int, float] = {}
+    for i, rarity in enumerate(RARITIES):
+        pool = b.pool(rarity)
+        if pool and b.rates[i]:
+            for cid in pool:
+                out[cid] = out.get(cid, 0.0) + b.rates[i] / BASE / len(pool)
+    return out
+
+
+def straight_value(P: Problem, tickets: int, elevens: int, plats: int, legends: int) -> tuple[float, str]:
+    """(new-unit value on average, banner) for a spend pulled with no planning: every rare ticket and 11-draw
+    straight on one banner open today, the best one for it, and platinum and legend tickets as they come.
+
+    A unit counts once, so its share is value x chance of at least one copy; a guaranteed draw gives one
+    uber from the banner's uber pool after its ordinary rolls, as in the game."""
+    if not (tickets or elevens or plats or legends):
+        return 0.0, ""
+    base: dict[int, float] = {}          # cat id -> chance of no copy from the platinum and legend tickets
+    for b, n in ((P.plat, plats), (P.legend, legends)):
+        if b is not None and n:
+            for cid, ch in roll_chances(b).items():
+                base[cid] = base.get(cid, 1.0) * (1.0 - ch) ** n
+
+    def value(miss: dict[int, float]) -> float:
+        return sum(P.unit_value[P.unit_index[cid]] * (1.0 - q) for cid, q in miss.items() if cid in P.unit_index)
+
+    best = (value(base), "")
+    if not (tickets or elevens):
+        return best
+    for b in P.rare_banners:
+        if not P.live[b.event_id][0]:
+            continue
+        g = b.guaranteed_rolls if b.guaranteed_rolls in (11, 15) else 0
+        rolls = tickets + elevens * (g - 1 if g else 11)
+        miss = dict(base)
+        for cid, ch in roll_chances(b).items():
+            miss[cid] = miss.get(cid, 1.0) * (1.0 - ch) ** rolls
+        ubers = b.pool("uber")
+        if g and elevens and ubers:
+            for cid in ubers:
+                miss[cid] = miss.get(cid, 1.0) * (1.0 - 1.0 / len(ubers)) ** elevens
+        v = value(miss)
+        if v > best[0] + 1e-12:
+            best = (v, b.event_id)
+    return best
 
 
 def _new_legend(P: Problem, k: int, gained: set[int]) -> int:

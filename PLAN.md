@@ -857,6 +857,34 @@ Each milestone has a deliverable you can look at and a check that has to pass be
 - README.md is now a one-screen page of run commands (launchers, by hand on Windows and macOS/Linux,
   tests, copying to another computer); the full feature guide moved to GUIDE.md.
 
+2026-10-27, twenty-eighth round: one app, named Wayfinder, with a Rare / Normal switch.
+
+- The normal-capsule planner (built 2026-10-05 in a separate "Normal Seed Planner" folder) now lives here
+  as the package `nsplanner`: bc-normal-seed-tracking's banners and roll rules (checked cell by cell
+  against the site's own code), an exact grid search for the most blue orbs (Cat Capsule power-ups),
+  Li'l Axe Cats and the Dark Catseye rule, the icon view, and its CLI (`python -m nsplanner`).
+- app.py: page and sidebar title "Wayfinder"; a "Planner" radio (Rare / Normal) under it, saved with the
+  other settings. Normal renders `nsplanner.ui.render` (its own sidebar inputs with "n_" keys, saved in
+  data_cache/normal_settings.json, Pulls and Tracks tabs) and stops before the rare planner runs.
+  The module reload helper covers both packages.
+- Grid search tie-break: states also carry the last pull's capsule, and a capsule switch costs 1e-7,
+  so equally good plans with fewer switches win (300 cat / 30 lucky: 66 operations instead of 82; the
+  scores are unchanged).
+- Tests: the normal planner's suite is here as test_normal_*.py with fixtures in tests/fixtures/normal;
+  134 tests in all.
+
+2026-10-27, twenty-ninth round: stop part-way and save progress (Normal planner).
+
+- The Pulls list is a small Streamlit component (nsplanner/frontend/index.html, protocol v1, no build
+  step) showing the same icon rows; clicking a pull, or a row number, returns its index. Single pulls
+  can be stopped after any one; a 10x pull only after its last roll (data-stop). The chosen pull is
+  marked STOP and everything after it fades.
+- The sidebar then shows "Stopped after pull k of n": the last cell and the next one, what was gained so
+  far, tickets left, the seed there and a tracker link (report.progress_after). "Save progress here"
+  writes that URL and the remaining tickets into the inputs, saves them and re-plans from that point.
+- Tests: from the saved seed and last result the rest of the plan comes out identical; every pull is
+  numbered in order and 10x pulls stop at their end. 136 tests.
+
 - Owned/priority pickers: the scope selectbox became a toggle, **Every gacha unit in the game**, on by
   default (off = today's banners and the platinum pool). Seasonal collab units such as the six Nenekos
   were always in the catalog; the old default scope hid them.
@@ -866,3 +894,65 @@ Each milestone has a deliverable you can look at and a check that has to pass be
   plan at Normal depth gives 37.0 and 13.0. A blind guaranteed 11-draw is worth 2.9–3.5 owning nothing
   and 1.0–1.6 owning the supers, so the planner often takes uber slots with singles and leaves the
   11-draw its guaranteed uber only.
+
+2026-10-27, thirtieth round: improvement factor, an optimality check, and inputs lost on a planner switch.
+
+- Normal: improvement = (blue orbs ÷ cat tickets spent, Catseye pulls included) ÷ 9/19, the long-run blue-orb
+  share of pulling the Cat Capsule straight (a re-roll picks evenly among the other 18 units, so the share is
+  unchanged; 200,000 simulated straight pulls gave 0.4755). The same line also gives the straight result from
+  this seed. His run (300 cat, 30 lucky, dark 10): 168 orbs, 0.560 per cat ticket, ×1.18; 157 straight from
+  this seed (0.523); 13 cat tickets go on Catseye pulls for the 3 Dark Catseyes.
+- Rare: improvement = new-unit value of the plan ÷ the expected new-unit value of the same spend pulled straight:
+  tickets and 11-draws on the one banner open today that does best that way (guaranteed draws: ordinary rolls,
+  then one uber from the pool), platinum and legend tickets as they come; a unit counts once
+  (value × chance of at least one copy). Within 0.3% of 1,500 simulated seeds (repeat-rare re-rolls, left out,
+  add a little). Shown under every plan header, on each Options row and in the copyable text.
+- Optimality: tests/normal_reference.py is an independent exact solver sharing only the roll simulation (its
+  own state space with raw last results, no reachability window, the Dark Catseye penalty scored from the end
+  state). It agrees with the planner on his run (174 = 168 orbs + 6 Li'l Axe Cats, 329 pulls), 40 random small
+  cases, 6 large ones (300-500 cat, 30-60 lucky) and 6 with all six capsules open. Choice codes now leave 64 key
+  slots per position (7 × 7 with six capsules would have overflowed 32; a step is at most 22, so int16 holds).
+- Bug: Streamlit forgets the value of a widget a run does not draw, so after a visit to the Normal planner the
+  rare inputs came back as zeros and the mode switch saved them (and the other way round, empty normal
+  inputs once Plan was pressed). Every saved input of both planners is now re-assigned at the start of each run
+  (app.keep_inputs, nsplanner.ui.keep_inputs); tests/test_app_inputs.py switches back and forth with AppTest.
+  144 tests.
+
+2026-10-29, thirty-first round: lucky tickets per cat ticket, and blue orbs as rare tickets.
+
+- His question: is about one lucky ticket per cat ticket what it takes to use every Cat Capsule pull well?
+  Sweep (his current values: Dark Catseye 5, Li'l Axe Cat 0) at 300 / 500 / 1000 cat tickets, lucky:cat
+  0 to 1.5: the share of cat tickets that become blue orbs rises from 53-54% to 96-97% and stops at
+  0.90 / 0.96 / 0.98 lucky per cat ticket, where the plan leaves the rest unused; by then 99.7% of Cat
+  Capsule pulls are blue orbs (the remaining cat tickets go on Catseye pulls for Dark Catseyes).
+- nsplanner/sweep.py: one plan per lucky count (0 to 1.2 per cat ticket, 13 plans, spawned processes,
+  one at a time if processes cannot start; 2.3 s for 335 cat); advise() picks the fewest lucky tickets
+  reaching the best plan and reports what that plan uses as "aim for".
+- Lucky tickets tab (button "Work it out", result kept per seed / cat tickets / values): cards for now
+  (×factor, orbs over pulling straight), with the recommended count (more orbs, orbs per extra lucky
+  ticket) and the recommendation itself; Altair chart, improvement factor 0 to ×2.5, reference lines at
+  ×1 (straight) and ×2.11 (every cat ticket a blue orb), your point and the "enough" point marked.
+  His case (335 cat, 128 lucky): ×1.57, +90 orbs (+18.1 rare tickets) over straight; with 302 lucky ×2.05,
+  +76 more orbs (+15.2 rare tickets), about 0.44 orbs per extra lucky ticket; aim for 0.90 per cat ticket.
+- Blue orbs as rare tickets at his rate, 5 orbs = 1 (report.ORBS_PER_RARE_TICKET), with the rare
+  planner's ticket icon (nsplanner/assets/rare_ticket.png): summary bar, improvement line, stop panel,
+  copyable text. 148 tests.
+
+2026-10-29, thirty-second round: fewest lucky tickets on a tie; the lucky-ticket chart, finished.
+
+- His question: does a plan ever spend a lucky ticket it does not need (e.g. on a cell where the Cat Capsule
+  has a blue orb)? Ties were broken on fewest pulls in total, not on lucky tickets. Now the order is: score,
+  then fewest lucky tickets (plan.SPARE), then fewest pulls, then fewest capsule changes, in the grid search,
+  plan_slow and the independent reference (tests/normal_reference.py). On 9 settings (his included) the old
+  rule had already found the fewest; 60 random cases (many with spare lucky tickets) agree with the reference
+  on score, lucky tickets and pulls.
+- Lucky pulls on a cell where the Cat Capsule shows a blue orb remain (3 in his 335/128 plan), each needed for
+  the dupe rule: 28B avoids a repeat Cat Cannon Charge at 29B that would re-roll into a Cat and switch track;
+  69A is a Li'l Axe Cat repeat that switches to 70B (Research) instead of 70A (Superfeline); 399B avoids a
+  Cat Capsule repeat that would switch track.
+- Lucky tickets tab: worked out without a button up to 600 cat tickets (2-3 s for 335); the "Now" card shows
+  blue orbs per cat ticket against 0.474; reference lines labelled "×1 = 0.474 blue orbs per cat ticket
+  (pulling straight)" and "×2.11 = every cat ticket a blue orb", drawn heavier than the gridlines; axes with
+  solid lines, ticks and larger labels; a hollow marker shows where the sidebar's lucky-ticket input lies
+  (before Plan is pressed again); marker labels sit right of and below their points, clear of the curve.
+- The code-reload notice no longer asks for Fetch banners in the Normal planner. 148 tests.

@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Battle Cats Pull Planner - local launcher for Git Bash / macOS / Linux.  Usage: ./run.sh [port]
+# Wayfinder - local launcher for Git Bash / macOS / Linux.  Usage: ./run.sh [port]
 cd "$(dirname "$0")" || exit 1
 PORT="${1:-8501}"
 if [ -x ".venv/Scripts/python.exe" ]; then PY=".venv/Scripts/python.exe"; else PY=".venv/bin/python"; fi

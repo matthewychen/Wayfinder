@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 
 from .actions import CLOCK, ELEVEN, LEGEND, PLAT, SINGLE, describe
-from .metrics import Metrics
+from .metrics import Metrics, straight_value
 from .prng import site_label
 from .problem import Problem
 from .replay import ReplayResult
@@ -258,7 +258,14 @@ def plan_text(problem: Problem, rep: ReplayResult, names: dict[int, str],
             spend.append(f"{rep.plats} platinum")
         if rep.legends:
             spend.append(f"{rep.legends} legend ticket{'s' if rep.legends > 1 else ''}")
-        lines.append(f"{title}: {', '.join(spend)}. Value {rep.value:.1f}.")
+        line = f"{title}: {', '.join(spend)}. Value {rep.value:.1f}."
+        elevens = sum(1 for st in rep.steps if st.action[0] == ELEVEN)
+        avg, ev = straight_value(P, rep.tickets, elevens, rep.plats, rep.legends)
+        if avg > 1e-9:
+            new = sum(P.value_of(cid) for cid in rep.gained)
+            line += (f" Improvement ×{new / avg:.2f}: new-unit value {new:.1f}, against {avg:.1f} on average "
+                     + (f"pulled straight on {bn.get(ev, ev)}." if ev else "with no planning."))
+        lines.append(line)
 
     def unit(rv) -> str:
         return names.get(rv.cat_id, str(rv.cat_id)) + ("*" if rv.new else "")

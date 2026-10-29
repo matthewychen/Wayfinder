@@ -1,4 +1,5 @@
-"""Battle Cats Pull Planner - Streamlit GUI.
+"""Wayfinder - Streamlit GUI: the rare-ticket planner (bc.godfat.org) and the normal-capsule planner
+(bc-normal-seed-tracking), switched in the sidebar.
 
 Run:  .venv/Scripts/streamlit run app.py      (Windows)
 """
@@ -22,13 +23,13 @@ def _reload_planner_modules_if_changed() -> bool:
     """Streamlit re-runs this script on every interaction but keeps imported modules cached.
     When any file in bcplanner/ is newer than what this process loaded, drop those modules so the
     imports below pick up the new code. No restart needed after code changes."""
-    newest = max(f.stat().st_mtime for f in (ROOT / "bcplanner").glob("*.py"))
+    newest = max(f.stat().st_mtime for pkg in ("bcplanner", "nsplanner") for f in (ROOT / pkg).glob("*.py"))
     last = getattr(sys, "_bcplanner_stamp", None)
     sys._bcplanner_stamp = newest
     if last is None or newest <= last:
         return False
     for name in list(sys.modules):
-        if name == "bcplanner" or name.startswith("bcplanner."):
+        if name in ("bcplanner", "nsplanner") or name.startswith(("bcplanner.", "nsplanner.")):
             del sys.modules[name]
     return True
 
@@ -49,7 +50,7 @@ from bcplanner.session import (Inputs, Plan, display_names, load_fixtures, load_
                                make_plan, parse_tracks_url, readings, row_matches, run, run_coverage,
                                save_settings, unit_rows, wishlist_multipliers)
 
-st.set_page_config(page_title="Battle Cats Pull Planner", page_icon="🐱", layout="wide")
+st.set_page_config(page_title="Wayfinder", page_icon="🧭", layout="wide")
 
 CACHE = ROOT / "data_cache"
 SETTINGS = CACHE / "settings.json"
@@ -94,7 +95,7 @@ def init_state():
         "forbid": True, "max_skips": 4, "depth": "Normal (fast)", "fixtures": False, "icon_size": 64,
         "priority_skip": False, "discount_first": False, "d_supa": 0.05, "d_uber": 0.2, "d_legend": 0.0,
         "uber_mult": 1.5, "p_uber": 0.8, "p_fest": 0.2, "p_legend": 5.0, "t_cost": 0.02,
-        "f_on": True, "f_outlook": 50,
+        "f_on": True, "f_outlook": 50, "mode": "Rare",
     }
     for k, v in defaults.items():
         ss[k] = saved.get(k, v)
@@ -111,14 +112,25 @@ def init_state():
     ss._init = True
 
 
+SAVED_KEYS = ["tracks_url", "tickets", "cat_food", "plats", "legends", "game_version", "rate", "w_supa", "w_uber",
+              "w_legend", "multiplier", "wishlist", "forbid", "max_skips", "depth", "fixtures", "icon_size",
+              "priority_skip", "discount_first", "d_supa", "d_uber", "d_legend", "uber_mult", "p_uber", "p_fest",
+              "f_on", "f_outlook", "p_legend", "t_cost", "mode"]
+
+
+def keep_inputs():
+    """Streamlit forgets the value of a widget that a run does not draw, and the planner switch hides the
+    rare planner's widgets: re-assigning every saved input at the start of each run keeps it while hidden
+    (otherwise switching Normal -> Rare brings the inputs back as zeros and saves those)."""
+    for k in SAVED_KEYS:
+        if k in ss:
+            ss[k] = ss[k]
+
+
 def persist():
     if STATELESS:
         return
-    keys = ["tracks_url", "tickets", "cat_food", "plats", "legends", "game_version", "rate", "w_supa", "w_uber",
-            "w_legend", "multiplier", "wishlist", "forbid", "max_skips", "depth", "fixtures", "icon_size",
-            "priority_skip", "discount_first", "d_supa", "d_uber", "d_legend", "uber_mult", "p_uber", "p_fest",
-            "f_on", "f_outlook", "p_legend", "t_cost"]
-    data = {k: ss.get(k) for k in keys}
+    data = {k: ss.get(k) for k in SAVED_KEYS}
     data["owned_ids"] = sorted(ss.owned_ids)
     data["priority_ids"] = sorted(ss.priority_ids)
     data["uber_priority_ids"] = sorted(ss.uber_priority_ids)
@@ -147,11 +159,13 @@ def save_home_map(home: dict[int, str]) -> None:
 
 
 init_state()
+keep_inputs()
 if RELOADED:
     # objects kept in the session were built by the old classes; start fresh
     ss.loaded = None
     ss.result = None
-    st.toast("Planner code updated. Press Fetch banners, then Plan again.")
+    st.toast("Planner code updated. Press Plan again." if ss.get("mode") == "Normal"
+             else "Planner code updated. Press Fetch banners, then Plan again.")
 _home_stamp = HOME_FILE.stat().st_mtime if HOME_FILE.exists() else 0.0
 if ss.get("home_stamp") != _home_stamp:          # (re)load when the file changes on disk
     ss.home_map = load_home_map()
@@ -213,10 +227,21 @@ def resource_row(kind: str, label: str, key: str, maxv: int, step: int = 1):
 
 
 # --------------------------------------------------------------------------------------
-# Sidebar
+# Sidebar: app title and the planner switch; the normal-capsule planner has its own screen
 # --------------------------------------------------------------------------------------
 with st.sidebar:
-    st.title("Pull planner")
+    st.title("Wayfinder")
+    st.radio("Planner", ["Rare", "Normal"], horizontal=True, key="mode", on_change=persist,
+             help="Rare: rare tickets, cat food, platinum and legend tickets (bc.godfat.org). "
+                  "Normal: cat tickets and lucky tickets (bc-normal-seed-tracking).")
+from nsplanner.ui import keep_inputs as keep_normal_inputs, render as render_normal  # noqa: E402
+
+keep_normal_inputs()        # the same for the normal planner's inputs while the rare planner is shown
+if ss.mode == "Normal":
+    render_normal(CACHE / "normal_settings.json", STATELESS)
+    st.stop()
+
+with st.sidebar:
     st.date_input("Plan date (device date today)", value=date.today(), key="plan_date")
     st.text_input("Your bc.godfat.org tracks URL", key="tracks_url",
                   placeholder="https://bc.godfat.org/?seed=...&last=...&event=...",
@@ -310,7 +335,7 @@ if fetch_clicked:
     persist()
 
 loaded = ss.loaded
-st.title("Battle Cats Pull Planner")
+st.title("Wayfinder")
 if loaded is None:
     st.info("Paste your tracks URL on the left, enter your resources, tick what you own in **Owned units**, "
             "then press **Fetch banners** and **Plan**.")
@@ -557,6 +582,14 @@ def plan_header(problem, plan: Plan, key: str):
                         f" &nbsp; → about **+{k['value']:.1f}** later", unsafe_allow_html=True)
         else:
             st.markdown("**Nothing kept:** spending now beats saving.")
+    if m.straight_value > 1e-9:
+        where = (f"straight on {display.get(m.straight_banner, m.straight_banner)}" if m.straight_banner
+                 else "with no planning")
+        st.markdown(f"**Improvement ×{m.improvement:.2f}** · new-unit value {m.new_value:.1f}, against "
+                    f"{m.straight_value:.1f} on average for the same spend pulled {where}",
+                    help="Same tickets, 11-draws, platinum and legend tickets, rolled with no track switching on "
+                         "purpose: tickets and 11-draws all on the one banner open today that does best that way. "
+                         "Values are the planner's unit values (repeats, passed-slot penalties and ticket costs left out).")
     bits = [f"Value {m.value:.2f}", f"repeat ubers {m.dupe_ubers}"]
     if m.uber_slots_passed:
         bits.append(f"singles that could have hit a new uber elsewhere {m.uber_slots_passed}")
@@ -755,9 +788,11 @@ with tab_opts:
                             unsafe_allow_html=True)
                 c1.markdown(spend_html(o.tickets, o.cat_food, o.plats, o.legends), unsafe_allow_html=True)
                 gain = f"+{o.delta_value:.1f} value vs the row above" if i else f"value {o.value:.1f}"
+                imp = o.plan.metrics.improvement
                 c2.markdown(f"**{len(o.new_top)} new uber/legend, {o.new_supa} new super rare"
                             + (f", {o.new_rare} new rare" if o.new_rare else "") + f"** — {gain}"
-                            + (f" &nbsp; · later +{o.later:.1f} → total {o.total:.1f}" if o.later else ""),
+                            + (f" &nbsp; · later +{o.later:.1f} → total {o.total:.1f}" if o.later else "")
+                            + (f" &nbsp; · ×{imp:.2f} vs pulling straight" if imp else ""),
                             unsafe_allow_html=True)
                 c2.markdown(units_html(o.new_top), unsafe_allow_html=True)
                 if o.note:
