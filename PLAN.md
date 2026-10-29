@@ -956,3 +956,6 @@ Each milestone has a deliverable you can look at and a check that has to pass be
   solid lines, ticks and larger labels; a hollow marker shows where the sidebar's lucky-ticket input lies
   (before Plan is pressed again); marker labels sit right of and below their points, clear of the curve.
 - The code-reload notice no longer asks for Fetch banners in the Normal planner. 148 tests.
+- Helper processes for the sweep are started as `python -m nsplanner.sweep` (job on stdin, one JSON point per
+  line). multiprocessing's spawn re-ran app.py in every helper under Streamlit on Windows (they crashed, and
+  the sweep fell back to one plan at a time: 7.7 s instead of 2.9 s for 335 cat tickets).

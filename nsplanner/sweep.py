@@ -51,42 +51,103 @@ def point(seed: int, last: str, st: Settings, lucky: int) -> Point:
     return from_result(plan(seed, last, s2), s2)
 
 
-def _job(args) -> Point:
-    return point(*args)
-
-
 def lucky_counts(cat: int) -> list[int]:
     return sorted({round(r * cat) for r in RATIOS})
+
+
+def _settings_to_json(st: Settings) -> dict:
+    return {"tickets": st.tickets, "banners": list(st.banners), "currency": st.currency, "weights": st.weights,
+            "dark_value": st.dark_value}
+
+
+def _settings_from_json(d: dict) -> Settings:
+    return Settings(tickets=d["tickets"], banners=tuple(d["banners"]), currency=d["currency"], weights=d["weights"],
+                    dark_value=d["dark_value"])
 
 
 def sweep(seed: int, last: str, st: Settings, progress=None, workers: int | None = None) -> list[Point]:
     """One plan per lucky-ticket count in `lucky_counts`, several at once in separate processes when the
     machine has the cores (one at a time if that fails, e.g. where processes cannot be started)."""
     cat = int(st.tickets.get(st.currency.get("np", "cat"), 0))
-    jobs = [(seed, last, st, n) for n in reversed(lucky_counts(cat))]       # biggest first
+    counts = list(reversed(lucky_counts(cat)))           # biggest first: the slow plans start early
     if workers is None:
         workers = min(4, max(1, (os.cpu_count() or 2) - 1))
     out: list[Point] = []
 
-    def tick():
+    def add(p: Point) -> None:
+        out.append(p)
         if progress is not None:
-            progress(len(out), len(jobs))
+            progress(len(out), len(counts))
 
-    if workers > 1 and len(jobs) > 2:
+    if workers > 1 and len(counts) > 2:
         try:
-            import multiprocessing as mp
-            from concurrent.futures import ProcessPoolExecutor, as_completed
-            with ProcessPoolExecutor(workers, mp_context=mp.get_context("spawn")) as ex:
-                for fut in as_completed([ex.submit(_job, j) for j in jobs]):
-                    out.append(fut.result())
-                    tick()
+            _in_processes(seed, last, st, counts, workers, add)
             return sorted(out, key=lambda p: p.lucky)
-        except Exception:  # noqa: BLE001 - no process pool here: do it in this process
+        except Exception:  # noqa: BLE001 - no helper processes here: do it in this process
             out.clear()
-    for j in jobs:
-        out.append(_job(j))
-        tick()
+    for n in counts:
+        add(point(seed, last, st, n))
     return sorted(out, key=lambda p: p.lucky)
+
+
+def _in_processes(seed: int, last: str, st: Settings, counts: list[int], workers: int, add) -> None:
+    """Plan `counts` in `workers` helper processes, each started as `python -m nsplanner.sweep` (not with
+    multiprocessing: under Streamlit that would run app.py again in every helper)."""
+    import json
+    import queue
+    import subprocess
+    import sys
+    import threading
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)      # no console window per helper on Windows
+    lines: queue.Queue = queue.Queue()
+    procs = []
+
+    def read(proc) -> None:
+        for line in proc.stdout:
+            lines.put(line)
+        lines.put(None)
+
+    for share in (counts[i::workers] for i in range(workers)):
+        if not share:
+            continue
+        proc = subprocess.Popen([sys.executable, "-m", "nsplanner.sweep"], cwd=root, stdin=subprocess.PIPE,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
+                                creationflags=flags)
+        procs.append(proc)
+        proc.stdin.write(json.dumps({"seed": seed, "last": last, "settings": _settings_to_json(st), "lucky": share}))
+        proc.stdin.close()
+        threading.Thread(target=read, args=(proc,), daemon=True).start()
+    try:
+        running, got = len(procs), 0
+        while running:
+            line = lines.get()
+            if line is None:
+                running -= 1
+            elif line.strip():
+                add(Point(**json.loads(line)))
+                got += 1
+        if got != len(counts):
+            raise RuntimeError(f"helpers returned {got} of {len(counts)} plans")
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+
+
+def _helper() -> None:
+    """`python -m nsplanner.sweep`: read {seed, last, settings, lucky: [...]} on stdin, print one Point per line."""
+    import json
+    import sys
+    from dataclasses import asdict
+
+    job = json.loads(sys.stdin.read())
+    st = _settings_from_json(job["settings"])
+    for n in job["lucky"]:
+        print(json.dumps(asdict(point(job["seed"], job["last"], st, n))), flush=True)
 
 
 @dataclass
@@ -125,3 +186,7 @@ def advise(points: list[Point], now: Point) -> Advice:
         best = now
     most = max(p.lucky for p in points)
     return Advice(now=now, best=best, want=best.lucky_used, still_rising=best.lucky >= most > 0)
+
+
+if __name__ == "__main__":
+    _helper()

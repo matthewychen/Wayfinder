@@ -26,8 +26,11 @@ def test_sweep_never_gets_worse_with_more_lucky_tickets_and_settles():
 
 
 def test_sweep_in_processes_matches_one_at_a_time():
+    """The helper processes (python -m nsplanner.sweep) give the same plans as planning here, one at a time."""
     st = settings_from(30, 0, 5.0, False, 1.0, 0.0)
-    assert sweep.sweep(SEED, LAST, st, workers=2) == sweep.sweep(SEED, LAST, st, workers=1)
+    got = []
+    sweep._in_processes(SEED, LAST, st, list(reversed(sweep.lucky_counts(30))), 2, got.append)   # raises if a helper fails
+    assert sorted(got, key=lambda p: p.lucky) == sweep.sweep(SEED, LAST, st, workers=1)
 
 
 def test_advice_when_lucky_tickets_are_plentiful():
